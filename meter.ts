@@ -27,7 +27,7 @@ namespace windMeter {
         pins.digitalWritePin(DigitalPin.P16, 0)
     }
 
-    // --- 1. 従来の電流（mA）測定ロジック ---
+    // --- 1. 電流（mA）測定ロジック ---
     function updateCurrent() {
         let request = pins.createBuffer(3)
         request[0] = 1
