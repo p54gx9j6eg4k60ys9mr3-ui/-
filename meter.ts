@@ -123,3 +123,44 @@ namespace windMeter {
             }
         })
     }
+
+    /** 100Ωの負荷電圧を起動直後から2秒ごとに表示する。 */
+    //% blockId=wind_meter_start_voltage block="100Ωの電圧を2秒ごとに表示する %direction"
+    export function startVoltage(direction: WindDigitOrder) {
+        order = direction
+        if (running) return
+        running = true
+        pins.digitalWritePin(DigitalPin.P8, 1)
+        pins.digitalWritePin(DigitalPin.P13, 0)
+        pins.digitalWritePin(DigitalPin.P16, 0)
+        display([0, 0, 0, 0])
+        pins.digitalWritePin(DigitalPin.P8, 0)
+        control.inBackground(function () {
+            while (true) {
+                let startTime = input.runningTime()
+                updateVoltage()
+                basic.pause(Math.max(1, 2000 - (input.runningTime() - startTime)))
+            }
+        })
+    }
+
+    /** 100Ωの負荷電力を起動直後から2秒ごとに表示する。 */
+    //% blockId=wind_meter_start_power block="100Ωの電力を2秒ごとに表示する %direction"
+    export function startPower(direction: WindDigitOrder) {
+        order = direction
+        if (running) return
+        running = true
+        pins.digitalWritePin(DigitalPin.P8, 1)
+        pins.digitalWritePin(DigitalPin.P13, 0)
+        pins.digitalWritePin(DigitalPin.P16, 0)
+        display([0, 0, 0, 0])
+        pins.digitalWritePin(DigitalPin.P8, 0)
+        control.inBackground(function () {
+            while (true) {
+                let startTime = input.runningTime()
+                updatePower()
+                basic.pause(Math.max(1, 2000 - (input.runningTime() - startTime)))
+            }
+        })
+    }
+}
