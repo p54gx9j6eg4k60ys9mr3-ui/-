@@ -27,8 +27,8 @@ namespace windMeter {
         pins.digitalWritePin(DigitalPin.P16, 0)
     }
 
-    // --- 1. 電流（mA）測定ロジック ---
-    function updateCurrent() {
+    // common I2C read function
+    function readAdcRaw(): number {
         let request = pins.createBuffer(3)
         request[0] = 1
         request[1] = config >> 8
@@ -37,88 +37,70 @@ namespace windMeter {
         basic.pause(12)
         pins.i2cWriteNumber(address, 1, NumberFormat.UInt8BE, true)
         if (pins.i2cReadNumber(address, NumberFormat.UInt16BE) != config) {
-            display([0, 121, 80, 80]) // Err
-            return
+            return -999 // Err
         }
         pins.i2cWriteNumber(address, 0, NumberFormat.UInt8BE, true)
-        let raw = pins.i2cReadNumber(address, NumberFormat.Int16BE)
-        if (raw == 32767) {
-            display([0, 0, 118, 6]) // HI
-            return
-        }
-        let tenths = Math.round(Math.max(0, raw) * 0.01875)
-        let tens = Math.idiv(tenths, 100)
-        display([0, tens ? digits[tens] : 0,
-            digits[Math.idiv(tenths, 10) % 10] | 128, digits[tenths % 10]])
+        return pins.i2cReadNumber(address, NumberFormat.Int16BE)
     }
 
-    // --- 2. 電圧（V）測定ロジック ---
-    function updateVoltage() {
-        let request = pins.createBuffer(3)
-        request[0] = 1
-        request[1] = config >> 8
-        request[2] = config & 255
-        pins.i2cWriteBuffer(address, request)
-        basic.pause(12)
-        pins.i2cWriteNumber(address, 1, NumberFormat.UInt8BE, true)
-        if (pins.i2cReadNumber(address, NumberFormat.UInt16BE) != config) {
-            display([0, 121, 80, 80]) // Err
-            return
-        }
-        pins.i2cWriteNumber(address, 0, NumberFormat.UInt8BE, true)
-        let raw = pins.i2cReadNumber(address, NumberFormat.Int16BE)
-        if (raw == 32767) {
-            display([0, 0, 118, 6]) // HI
-            return
-        }
-        let voltageMv = Math.max(0, raw) * 0.1875
-        let displayVal = Math.min(9999, Math.round(voltageMv / 10))
-        let d3 = Math.idiv(displayVal, 1000) % 10
-        let d2 = Math.idiv(displayVal, 100) % 10
-        let d1 = Math.idiv(displayVal, 10) % 10
-        let d0 = displayVal % 10
+    // --- 1. 電流（mA）測定ロジック（小数第1位まで表示: 例 12.5 mA） ---
+    function updateCurrent() {
+        let raw = readAdcRaw()
+        if (raw == -999) { display([0, 121, 80, 80]); return; } // Err
+        if (raw == 32767) { display([0, 0, 118, 6]); return; }  // HI
 
+        let tenths = Math.round(Math.max(0, raw) * 0.01875)
+        let tens = Math.idiv(tenths, 100)
         display([
-            d3 ? digits[d3] : 0,
-            digits[d2] | 128,
-            digits[d1],
-            digits[d0]
+            0,
+            tens ? digits[tens] : 0,
+            digits[Math.idiv(tenths, 10) % 10] | 128, // 小数点
+            digits[tenths % 10]
         ])
     }
 
-    // --- 3. 電力（mW）測定ロジック ---
-    function updatePower() {
-        let request = pins.createBuffer(3)
-        request[0] = 1
-        request[1] = config >> 8
-        request[2] = config & 255
-        pins.i2cWriteBuffer(address, request)
-        basic.pause(12)
-        pins.i2cWriteNumber(address, 1, NumberFormat.UInt8BE, true)
-        if (pins.i2cReadNumber(address, NumberFormat.UInt16BE) != config) {
-            display([0, 121, 80, 80]) // Err
-            return
-        }
-        pins.i2cWriteNumber(address, 0, NumberFormat.UInt8BE, true)
-        let raw = pins.i2cReadNumber(address, NumberFormat.Int16BE)
-        if (raw == 32767) {
-            display([0, 0, 118, 6]) // HI
-            return
-        }
+    // --- 2. 電圧（V）測定ロジック（小数第2位まで表示: 例 1.25 V） ---
+    function updateVoltage() {
+        let raw = readAdcRaw()
+        if (raw == -999) { display([0, 121, 80, 80]); return; } // Err
+        if (raw == 32767) { display([0, 0, 118, 6]); return; }  // HI
+
+        // 電圧(mV)を算出し、X.XX V表示用に調整
         let voltageMv = Math.max(0, raw) * 0.1875
+        let vVal = Math.round(voltageMv / 10) // 例: 1250mV -> 125
+        let d1 = Math.idiv(vVal, 100) % 10
+        let d2 = Math.idiv(vVal, 10) % 10
+        let d3 = vVal % 10
+
+        display([
+            0,
+            digits[d1] | 128, // 1の位に小数点をつけて「X.」にする
+            digits[d2],
+            digits[d3]
+        ])
+    }
+
+    // --- 3. 電力（mW）測定ロジック（整数で表示: 例 125 mW） ---
+    function updatePower() {
+        let raw = readAdcRaw()
+        if (raw == -999) { display([0, 121, 80, 80]); return; } // Err
+        if (raw == 32767) { display([0, 0, 118, 6]); return; }  // HI
+
+        let voltageMv = Math.max(0, raw) * 0.1875
+        // P = V^2 / R (R=100Ω), mW単位に変換
         let powerMw = Math.round((voltageMv * voltageMv) / 100000)
         let displayVal = Math.min(9999, powerMw)
 
-        let d3 = Math.idiv(displayVal, 1000) % 10
-        let d2 = Math.idiv(displayVal, 100) % 10
-        let d1 = Math.idiv(displayVal, 10) % 10
-        let d0 = displayVal % 10
+        let d0 = Math.idiv(displayVal, 1000) % 10
+        let d1 = Math.idiv(displayVal, 100) % 10
+        let d2 = Math.idiv(displayVal, 10) % 10
+        let d3 = displayVal % 10
 
         display([
-            d3 ? digits[d3] : 0,
-            d2 ? digits[d2] : 0,
-            digits[d1],
-            digits[d0]
+            d0 ? digits[d0] : 0,
+            d1 ? digits[d1] : 0,
+            digits[d2],
+            digits[d3]
         ])
     }
 
@@ -141,44 +123,3 @@ namespace windMeter {
             }
         })
     }
-
-    /** 100Ωの負荷電圧を起動直後から2秒ごとに表示する。 */
-    //% blockId=wind_meter_start_voltage block="100Ωの電圧を2秒ごとに表示する %direction"
-    export function startVoltage(direction: WindDigitOrder) {
-        order = direction
-        if (running) return
-        running = true
-        pins.digitalWritePin(DigitalPin.P8, 1)
-        pins.digitalWritePin(DigitalPin.P13, 0)
-        pins.digitalWritePin(DigitalPin.P16, 0)
-        display([0, 0, 0, 0])
-        pins.digitalWritePin(DigitalPin.P8, 0)
-        control.inBackground(function () {
-            while (true) {
-                let startTime = input.runningTime()
-                updateVoltage()
-                basic.pause(Math.max(1, 2000 - (input.runningTime() - startTime)))
-            }
-        })
-    }
-
-    /** 100Ωの負荷電力を起動直後から2秒ごとに表示する。 */
-    //% blockId=wind_meter_start_power block="100Ωの電力を2秒ごとに表示する %direction"
-    export function startPower(direction: WindDigitOrder) {
-        order = direction
-        if (running) return
-        running = true
-        pins.digitalWritePin(DigitalPin.P8, 1)
-        pins.digitalWritePin(DigitalPin.P13, 0)
-        pins.digitalWritePin(DigitalPin.P16, 0)
-        display([0, 0, 0, 0])
-        pins.digitalWritePin(DigitalPin.P8, 0)
-        control.inBackground(function () {
-            while (true) {
-                let startTime = input.runningTime()
-                updatePower()
-                basic.pause(Math.max(1, 2000 - (input.runningTime() - startTime)))
-            }
-        })
-    }
-}
